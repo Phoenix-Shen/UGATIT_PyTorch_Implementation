@@ -1,0 +1,39 @@
+# NETWORK SETTINGS
+
+# use the light model?
+light: True
+# the base number of featres in every layer
+ch: 64
+# the number of resblock in generator
+n_res: 4
+# the number of layers in discriminator
+n_dis: 6
+
+# DATASET SETTINGS
+dataset: dataset_name
+batch_size: 1
+img_size: 256
+img_ch: 3
+
+# TRAINING SETTINGS
+iteration: 1000000
+# the frequency of saving the generated images
+print_freq: 1000
+# the frequency of saving the parameters
+save_freq: 10000
+
+decay_flag: True
+
+lr: 0.0001
+weight_decay: 0.0001
+# the ratio of the loss functions
+adv_weight: 1
+cycle_weight: 10
+identity_weight: 10
+cam_weight: 1000
+
+result_dir: results
+cuda: True
+benchmark_flag: False
+
+resume: False
