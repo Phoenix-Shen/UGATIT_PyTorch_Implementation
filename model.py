@@ -4,6 +4,7 @@ U-GAT-IT:自适应图层实例规范化的无监督图像翻译网络。
 无法稳定有效地适应纹理和形状在不同程度上的变化，
 U-GAT-IT通过2个设计实现了具有更强鲁棒性的端到端图像翻译模型。
 """
+# %%
 import torch as t
 import torch.nn as nn
 import torch.nn.functional as F
@@ -86,6 +87,7 @@ class ClassActivationMapping(nn.Module):
         x = F.relu(self.conv1x1(x), True)
 
         # get the attention map via sum operation
+        # [1,1,H,W]
         heatmap = t.sum(x, dim=1, keepdim=True)
         return x, cam_logit, heatmap
 
@@ -103,6 +105,7 @@ class BetaAndGamma(nn.Module):
     def __init__(self, n_features: int, feature_size: int, light: bool) -> None:
         super().__init__()
         # if use light mode, we do the pooling operation first
+        # [n_features,H,W]->[1,n_features]
         if light:
             fully_connection_layers = [
                 nn.AdaptiveAvgPool2d(1),
@@ -113,6 +116,7 @@ class BetaAndGamma(nn.Module):
                 nn.ReLU(True),
             ]
         # else, do not execute the pooling operation
+        # [n_features,H,W]->[1,n_features]
         else:
             fully_connection_layers = [
                 nn.Flatten(),
@@ -128,10 +132,120 @@ class BetaAndGamma(nn.Module):
         self.fc = nn.Sequential(*fully_connection_layers)
 
     def forward(self, x: Tensor) -> tuple[Tensor, Tensor]:
+        """
+        args: 
+            x: the input feature map
+
+        returns:
+            tuple of gamma and beta
+        """
         x = self.fc(x)
         beta = self.beta(x)
         gamma = self.gamma(x)
         return gamma, beta
+
+
+class ResnetAdaILNBlock(nn.Module):
+    """
+    Resnet block with Adaptive Layer Instance Normlization
+    """
+
+    def __init__(self, n_features: int, bias: bool) -> None:
+        super().__init__()
+
+        self.pad1 = nn.ReflectionPad2d(1)
+        self.conv1 = nn.Conv2d(n_features, n_features,
+                               kernel_size=3, stride=1, padding=0, bias=bias)
+        self.norm1 = AdaILN(n_features)
+        self.relu1 = nn.ReLU(True)
+        self.pad2 = nn.ReflectionPad2d(1)
+        self.conv2 = nn.Conv2d(n_features, n_features,
+                               kernel_size=3, stride=1, padding=0, bias=bias)
+        self.norm2 = AdaILN(n_features)
+
+    def forward(self, x: Tensor, gamma: Tensor, beta: Tensor) -> Tensor:
+        out = self.pad1(x)
+        out = self.conv1(out)
+        out = self.norm1(out, gamma, beta)
+        out = self.relu1(out)
+        out = self.pad2(out)
+        out = self.conv2(out)
+        out = self.norm2(out, gamma, beta)
+        return x+out
+
+
+class AdaILN(nn.Module):
+    """
+    Adaptive Instance Layer Normalization in the Paper
+
+    Args:
+        n_features: the input features
+        eps: in the computation progress of normlization, Adding eps is to prevent the divisor from being 0
+    """
+
+    def __init__(self, n_features: int, eps=1e-5) -> None:
+        super().__init__()
+        self.eps = eps
+        self.rho = nn.Parameter(t.ones((1, n_features, 1, 1)))
+        self.rho.data.fill_(0.9)
+
+    def forward(self, x: Tensor, gamma: Tensor, beta: Tensor) -> Tensor:
+        # IN normalizes the 2nd and 3rd dimensions of the image
+        in_mean, in_var = t.mean(x, dim=[2, 3], keepdim=True), t.var(
+            x, dim=[2, 3], keepdim=True)
+        # LN normalizes the 1st, 2nd and 3rd dimensions of the image
+        ln_mean, ln_var = t.mean(x, dim=[1, 2, 3], keepdim=True), t.var(
+            x, dim=[1, 2, 3], keepdim=True)
+        # compute the Normalized value, Adding eps is to prevent the divisor from being 0
+        in_value = (x-in_mean)/t.sqrt(in_var+self.eps)
+        ln_value = (x-ln_mean)/t.sqrt(ln_var+self.eps)
+        # Adaptivly combine the in_value and the ln_value
+        # Copy parameters in the case of multiple batches
+        rho = self.rho.expand(x.shape[0], -1, -1, -1)
+        out = rho*in_value + (1-rho)*ln_value
+        # multiply with GAMMA and BETA (reshape operation is needed, also we can unsqueeze them)
+        out = out * gamma.unsqueeze(2).unsqueeze(3) + \
+            beta.unsqueeze(2).unsqueeze(3)
+        return out
+
+
+class ILN(nn.Module):
+    """
+    Common Instance Layer Normalization Layer\n
+    The Module Contains 3 Parameters : GAMMA BETA and RHO, thay arr all learnable
+
+    Args:
+        n_features: the input features
+        eps: in the computation progress of normlization, Adding eps is to prevent the divisor from being 0
+
+
+    """
+
+    def __init__(self, n_features: int, eps=1e-5) -> None:
+        super().__init__()
+        self.eps = eps
+        self.rho = nn.Parameter(t.zeros((1, n_features, 1, 1)))
+        self.gamma = nn.Parameter(t.ones((1, n_features, 1, 1)))
+        self.beta = nn.Parameter(t.zeros((1, n_features, 1, 1)))
+
+    def forward(self, x: Tensor) -> Tensor:
+        # IN normalizes the 2nd and 3rd dimensions of the image
+        in_mean, in_var = t.mean(x, dim=[2, 3], keepdim=True), t.var(
+            x, dim=[2, 3], keepdim=True)
+        # LN normalizes the 1st, 2nd and 3rd dimensions of the image
+        ln_mean, ln_var = t.mean(x, dim=[1, 2, 3], keepdim=True), t.var(
+            x, dim=[1, 2, 3], keepdim=True)
+        # compute the Normalized value, Adding eps is to prevent the divisor from being 0
+        in_value = (x-in_mean)/t.sqrt(in_var+self.eps)
+        ln_value = (x-ln_mean)/t.sqrt(ln_var+self.eps)
+        # Adaptivly combine the in_value and the ln_value
+        # Copy parameters in the case of multiple batches
+        rho = self.rho.expand(x.shape[0], -1, -1, -1)
+        out = rho*in_value + (1-rho)*ln_value
+        # multiply with GAMMA and BETA (Need to extend dimensions to cope with multiple batches)
+        out = out * self.gamma.expand(x.shape[0], -1, -1, -1) + \
+            self.beta.expand(x.shape[0], -1, -1, -1)
+        return out
 
 
 class Generator(nn.Module):
@@ -142,7 +256,7 @@ class Generator(nn.Module):
         input_nc: the number of channels in the input images
         output_nc: the number of channels in the output images
         n_hiddens: the number of features in the hidden layers
-        n_resblocks: the number of the residual blocks in the network
+        n_resblocks: the number of the residual blocks in the down and up sampling procedure
         light: use light model to save cuda memory
         img_size: the shape of the image (ususally 256)
     """
@@ -187,7 +301,58 @@ class Generator(nn.Module):
         for i in range(n_resblocks):
             DownBlock += [ResnetBlock(n_hiddens*mult, bias=False)]
 
+        self.DownBlock = nn.Sequential(*DownBlock)
         # Class Activation Map
+        # [n_hiddens*4,64,64]->([n_hiddens*4,64,64],[1,2],[1,64,64])
         self.cam = ClassActivationMapping(n_hiddens*mult)
 
         # Gamma, Beta Blocks
+        # [n_hiddens*4,64,64]->[1,n_hiddens*4]
+        self.beta_gamma = BetaAndGamma(
+            n_hiddens*mult, self.img_size // mult, light=self.light)
+
+        # Up Sampling Bottleneck
+        for i in range(n_resblocks):
+            setattr(self, "UpBlock1_"+str(i+1),
+                    ResnetAdaILNBlock(mult*n_hiddens, bias=False))
+
+        # Up Sampling Operation
+        # # [n_hiddens*4,64,64]->[n_hiddens*4,128,128]->[n_hiddens*2,128,128]
+        # # [n_hiddens*2,128,128]->[n_hiddens*2,256,256]->[n_hiddens,256,256]
+        UpBlock2 = []
+        for i in range(n_downsampling):
+            mult = 2**(n_downsampling-i)
+            UpBlock2 += [
+                nn.Upsample(scale_factor=2),
+                nn.ReflectionPad2d(1),
+                nn.Conv2d(n_hiddens*mult, int(n_hiddens*mult/2),
+                          kernel_size=3, stride=1, padding=0, bias=False),
+                ILN(int(n_hiddens*mult/2)),
+                nn.ReLU(True),
+            ]
+        # # [n_hiddens,256,256]->[n_hiddens,262,262]->[output_nc,256,256]->[Tanh-Rescale to [0-1]]
+        UpBlock2 += [nn.ReflectionPad2d(3),
+                     nn.Conv2d(n_hiddens, output_nc, kernel_size=7,
+                               stride=1, padding=0, bias=False),
+                     nn.Tanh(),
+                     ]
+
+        self.UpBlock2 = nn.Sequential(*UpBlock2)
+
+    def forward(self, x: Tensor) -> tuple[Tensor, Tensor, Tensor]:
+        """
+        input: Tensor of 4 dim\n
+        output: Generated Image (B*C*H*W), log Probability of the Image (B*2), HeatMap (B*1*64*64)
+        """
+        # DownSampling Operation
+        x = self.DownBlock.forward(x)
+        # Cam Module
+        x, cam_logit, attention = self.cam.forward(x)
+        # Gamma and Beta
+        gamma, beta = self.beta_gamma.forward(x)
+        # UpSampling ResBlock with AdaILN Module
+        for i in range(self.n_resblocks):
+            x = getattr(self, "UpBlock1_"+str(i+1)).forward(x, gamma, beta)
+        out = self.UpBlock2.forward(x)
+        # return the generated image, the cam log probability and the attention heatmap
+        return out, cam_logit, attention
