@@ -44,9 +44,9 @@ class ClassActivationMapping(nn.Module):
     The attention Module for classification
     """
 
-    def __init__(self, n_features: int) -> None:
+    def __init__(self, n_features: int, activation="relu") -> None:
         super().__init__()
-
+        self.activation = activation
         self.gap_fc = nn.Linear(n_features, 1, bias=False)
         self.gmp_fc = nn.Linear(n_features, 1, bias=False)
         self.conv1x1 = nn.Conv2d(
@@ -74,9 +74,9 @@ class ClassActivationMapping(nn.Module):
         # extract weights of the liear layer
         # gap_fc.weight.shape = [1,n_features]
         gap_weight = list(self.gap_fc.parameters())[
-            0].reshape((1, x.shape[1], 1, 1))
+            0].unsqueeze(2).unsqueeze(3)
         gmp_weight = list(self.gmp_fc.parameters())[
-            0].reshape((1, x.shape[1], 1, 1))
+            0].unsqueeze(2).unsqueeze(3)
         # multiply with the input data, we get the attention map
         gap = x*gap_weight
         gmp = x*gmp_weight
@@ -84,8 +84,13 @@ class ClassActivationMapping(nn.Module):
         x = t.cat([gap, gmp], 1)
         # Dimensionality reduction
         # [1,2*n_features,H,W]->[1,n_features,H,W]
-        x = F.relu(self.conv1x1(x), True)
-
+        if self.activation == "relu":
+            x = F.relu(self.conv1x1(x), True)
+        elif self.activation == "leaky_relu":
+            x = F.leaky_relu(self.conv1x1(x), 0.2, True)
+        else:
+            raise NotImplementedError(
+                "only support relu and leaky_relu acitvation function")
         # get the attention map via sum operation
         # [1,1,H,W]
         heatmap = t.sum(x, dim=1, keepdim=True)
@@ -341,7 +346,7 @@ class Generator(nn.Module):
 
     def forward(self, x: Tensor) -> tuple[Tensor, Tensor, Tensor]:
         """
-        input: Tensor of 4 dim\n
+        input: Tensor of 4 dim \n
         output: Generated Image (B*C*H*W), log Probability of the Image (B*2), HeatMap (B*1*64*64)
         """
         # DownSampling Operation
@@ -356,3 +361,82 @@ class Generator(nn.Module):
         out = self.UpBlock2.forward(x)
         # return the generated image, the cam log probability and the attention heatmap
         return out, cam_logit, attention
+
+
+class Discriminator(nn.Module):
+    """
+    The structure of the discriminator is similar to that of the generator,
+    consisting of a downsampling module and a CAM module
+
+    Args:
+        input_ch: the channel of input images
+        n_hiddens: the features of the hidden layer
+        n_layers: the number of down sampling layer
+    """
+
+    def __init__(self, input_ch: int, n_hiddens=64, n_layers=5) -> None:
+        super().__init__()
+        # Down Sampling
+        model = [
+            nn.ReflectionPad2d(1),
+            nn.Conv2d(input_ch, n_hiddens, kernel_size=4,
+                      stride=2, padding=0, bias=True),
+            nn.LeakyReLU(0.2, True)
+        ]
+
+        for i in range(1, n_layers-2):
+            mult = 2**(i-1)
+            model += [
+                nn.ReflectionPad2d(1),
+                nn.Conv2d(n_hiddens*mult, n_hiddens*mult*2,
+                          kernel_size=4, stride=2, padding=0, bias=True),
+                nn.LeakyReLU(0.2, True)
+            ]
+        mult = 2**(n_layers-2-1)
+        model += [
+            nn.ReflectionPad2d(1),
+            nn.Conv2d(n_hiddens*mult, n_hiddens*mult*2,
+                      kernel_size=4, stride=1, padding=0, bias=True),
+            nn.LeakyReLU(0.2, True),
+        ]
+        self.model = nn.Sequential(*model)
+
+        # Class Activation Map
+        mult = 2 ** (n_layers - 2)
+        self.cam = ClassActivationMapping(
+            n_hiddens*mult, activation="leaky_relu")
+        # Fianl Conv layer
+        self.pad = nn.ReflectionPad2d(1)
+        self.conv = nn.Conv2d(n_hiddens*mult, 1, kernel_size=4,
+                              stride=1, padding=0, bias=False)
+
+    def forward(self, x: Tensor) -> tuple[Tensor, Tensor, Tensor]:
+        """
+        Forward function of the Dicriminator
+
+        Args:
+            x: the input feature map
+        Returns:
+            A tuple that conbines the output,the cam_logit and the heatmap 
+        """
+        # down Sampling
+        x = self.model.forward(x)
+        # Class Activation Mapping
+        x, cam_logit, heatmap = self.cam.forward(x)
+        # Padding and get the result
+        x = self.pad(x)
+        x = self.conv(x)
+        return x, cam_logit, heatmap
+
+
+class RhoClipper(object):
+    def __init__(self, min, max) -> None:
+        self.clip_min = min
+        self.clip_max = max
+        assert min < max
+
+    def __call__(self, module: nn.Module) -> None:
+        if hasattr(module, "rho"):
+            w = module.rho.data
+            w = w.clamp(self.clip_min, self.clip_max)
+            module.rho.data = w

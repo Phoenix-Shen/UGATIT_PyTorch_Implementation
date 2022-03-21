@@ -1,2 +1,6 @@
+# datasets
 datasets/
+# vscode files
 .vscode/
+# python cache files
+__pycache__/
