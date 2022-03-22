@@ -217,12 +217,11 @@ class AdaILN(nn.Module):
 class ILN(nn.Module):
     """
     Common Instance Layer Normalization Layer\n
-    The Module Contains 3 Parameters : GAMMA BETA and RHO, thay arr all learnable
+    The Module Contains 3 Parameters : GAMMA BETA and RHO, thay are all learnable
 
     Args:
         n_features: the input features
         eps: in the computation progress of normlization, Adding eps is to prevent the divisor from being 0
-
 
     """
 

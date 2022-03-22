@@ -1,7 +1,4 @@
-
-from email.errors import MisplacedEnvelopeHeaderDefect
-from tracemalloc import start
-from cv2 import transform
+from matplotlib.pyplot import axis
 import torchvision.transforms as transforms
 import torch as t
 from utils import *
@@ -11,6 +8,7 @@ from tensorboardX import SummaryWriter
 from torch.utils.data import DataLoader
 import itertools
 from model import Generator, Discriminator, RhoClipper
+import numpy as np
 
 
 def train():
@@ -290,6 +288,134 @@ def train():
         ##################################################
         genA2B.apply(rho_clipper)
         genB2A.apply(rho_clipper)
+
+        print("[%5d/%5d] time: %4.4f d_loss: %.8f, g_loss: %.8f" % (step,
+                                                                    args["iteration"], time.time() - start_time, Discriminator_loss, Generator_loss))
+
+        ######################
+        # Validation Process #
+        ######################
+        with t.no_grad():
+            if step % args["print_freq"] == 0:
+                train_sample_num = 5
+                test_sample_num = 5
+                A2B = np.zeros((args["image_size"]*7, 0, 3))
+                B2A = np.zeros((args["image_size"]*7, 0, 3))
+                # turn to eval mode
+                genA2B.eval(), genB2A.eval()
+                # generate train set images
+                for _ in range(train_sample_num):
+                    try:
+                        real_A, _ = trainA_iter.next()
+                    except:
+                        trainA_iter = iter(trainA_loader)
+                        real_A, _ = trainA_iter.next()
+                    try:
+                        real_B, _ = trainB_iter.next()
+                    except:
+                        trainB_iter = iter(trainB_loader)
+                        real_B, _ = trainB_iter.next()
+
+                    real_A, real_B = real_A.to(device), real_B.to(device)
+                    # A to B -> Style Transform
+                    fake_A2B, _, fake_A2B_heatmap = genA2B(real_A)
+                    fake_B2A, _, fake_B2A_heatmap = genB2A(real_B)
+                    # A to B to A -> Reconstruction
+                    fake_A2B2A, _, fake_A2B2A_heatmap = genB2A(fake_A2B)
+                    fake_B2A2B, _, fake_B2A2B_heatmap = genA2B(fake_B2A)
+                    # A to A -> Identity
+                    fake_A2A, _, fake_A2A_heatmap = genB2A(real_A)
+                    fake_B2B, _, fake_B2B_heatmap = genA2B(real_B)
+                    # concatenate
+                    A2B = np.concatenate((A2B, np.concatenate(
+                                         handle_generated_image(real_A[0]),
+                                         handle_cam_heatmap(
+                                             fake_A2A_heatmap[0], size=args["img_size"]),
+                                         handle_generated_image(fake_A2A[0]),
+                                         handle_cam_heatmap(
+                                             fake_A2B_heatmap, size=args["img_size"]),
+                                         handle_generated_image(fake_A2B[0]),
+                                         handle_cam_heatmap(
+                                             fake_A2B2A_heatmap[0], size=args["img_size"]),
+                                         handle_generated_image(fake_A2B2A[0]), axis=0)), axis=1)
+
+                    B2A = np.concatenate((B2A, np.concatenate(
+                                         handle_generated_image(real_B[0]),
+                                         handle_cam_heatmap(
+                                             fake_B2B_heatmap[0], size=args["img_size"]),
+                                         handle_generated_image(fake_B2B[0]),
+                                         handle_cam_heatmap(
+                                             fake_B2A_heatmap, size=args["img_size"]),
+                                         handle_generated_image(fake_B2A[0]),
+                                         handle_cam_heatmap(
+                                             fake_B2A2B_heatmap[0], size=args["img_size"]),
+                                         handle_generated_image(fake_B2A2B[0]), axis=0)), axis=1)
+
+                for _ in range(test_sample_num):
+                    try:
+                        real_A, _ = testA_iter.next()
+                    except:
+                        testA_iter = iter(testA_loader)
+                        real_A, _ = testA_iter.next()
+                    try:
+                        real_B, _ = testB_iter.next()
+                    except:
+                        testB_iter = iter(testB_loader)
+                        real_B, _ = testB_iter.next()
+
+                    real_A, real_B = real_A.to(device), real_B.to(device)
+                    # A to B -> Style Transform
+                    fake_A2B, _, fake_A2B_heatmap = genA2B(real_A)
+                    fake_B2A, _, fake_B2A_heatmap = genB2A(real_B)
+                    # A to B to A -> Reconstruction
+                    fake_A2B2A, _, fake_A2B2A_heatmap = genB2A(fake_A2B)
+                    fake_B2A2B, _, fake_B2A2B_heatmap = genA2B(fake_B2A)
+                    # A to A -> Identity
+                    fake_A2A, _, fake_A2A_heatmap = genB2A(real_A)
+                    fake_B2B, _, fake_B2B_heatmap = genA2B(real_B)
+                    # concatenate
+                    A2B = np.concatenate((A2B, np.concatenate(
+                                         handle_generated_image(real_A[0]),
+                                         handle_cam_heatmap(
+                                             fake_A2A_heatmap[0], size=args["img_size"]),
+                                         handle_generated_image(fake_A2A[0]),
+                                         handle_cam_heatmap(
+                                             fake_A2B_heatmap, size=args["img_size"]),
+                                         handle_generated_image(fake_A2B[0]),
+                                         handle_cam_heatmap(
+                                             fake_A2B2A_heatmap[0], size=args["img_size"]),
+                                         handle_generated_image(fake_A2B2A[0]), axis=0)), axis=1)
+
+                    B2A = np.concatenate((B2A, np.concatenate(
+                                         handle_generated_image(real_B[0]),
+                                         handle_cam_heatmap(
+                                             fake_B2B_heatmap[0], size=args["img_size"]),
+                                         handle_generated_image(fake_B2B[0]),
+                                         handle_cam_heatmap(
+                                             fake_B2A_heatmap, size=args["img_size"]),
+                                         handle_generated_image(fake_B2A[0]),
+                                         handle_cam_heatmap(
+                                             fake_B2A2B_heatmap[0], size=args["img_size"]),
+                                         handle_generated_image(fake_B2A2B[0]), axis=0)), axis=1)
+
+                # write image
+                cv2.imwrite(os.path.join(
+                    args["result_dir"], args["dataset"], "img_A2B_%07d.png" % step), A2B*255.0)
+                cv2.imwrite(os.path.join(
+                    args["result_dir"], args["dataset"], "img_B2A_%07d.png" % step), B2A*255.0)
+                # turn to train mode
+                genA2B.train(), genB2A.train()
+
+        if step % args["save_freq"] == 0:
+            params = {}
+            params['genA2B'] = genA2B.state_dict()
+            params['genB2A'] = genB2A.state_dict()
+            params['disGA'] = disGA.state_dict()
+            params['disGB'] = disGB.state_dict()
+            params['disLA'] = disLA.state_dict()
+            params['disLB'] = disLB.state_dict()
+            t.save(params, os.path.join(args["result_dir"],
+                                        args["dataset"] + '_params_%07d.pt' % step))
 
 
 if __name__ == "__main__":

@@ -1,10 +1,16 @@
 # %%
 
+from ctypes.wintypes import RGB
+from numpy import ndarray
+from torch import Tensor, tensor
 import yaml
 import os
 import torch.nn as nn
 from glob import glob
 import torch as t
+import cv2
+import numpy as np
+
 
 def load_config(config_file_path: str) -> dict:
     """
@@ -97,7 +103,7 @@ def find_latest_model(result_path: str, dataset_name: str) -> tuple[str, int]:
         return -1, None
 
 
-def save_model(genA2B: nn.Module, genB2A: nn.Module, disGA: nn.Module, disGB: nn.Module, disLA: nn.Module, disLB: nn.Module, dir: str,dataset:str, step: int) -> None:
+def save_model(genA2B: nn.Module, genB2A: nn.Module, disGA: nn.Module, disGB: nn.Module, disLA: nn.Module, disLB: nn.Module, dir: str, dataset: str, step: int) -> None:
     """
     save the model to the specific directory
     ------
@@ -109,7 +115,7 @@ def save_model(genA2B: nn.Module, genB2A: nn.Module, disGA: nn.Module, disGB: nn
     Returns:
         None
     """
-    params={}
+    params = {}
     params['genA2B'] = genA2B.state_dict()
     params['genB2A'] = genB2A.state_dict()
     params['disGA'] = disGA.state_dict()
@@ -119,11 +125,57 @@ def save_model(genA2B: nn.Module, genB2A: nn.Module, disGA: nn.Module, disGB: nn
     t.save(params, os.path.join(
         dir, dataset + '_params_%07d.pt' % step))
 
-def tensor2numpy():
-    pass
 
-def denormalization():
-    pass
+def tensor2numpy(x: Tensor) -> ndarray:
+    """
+    transform tensor to numpy.ndarray
+    ------
+    Args:
+        x: the tensor
+    Returns:
+        the ndarray obj
+    """
+    return x.detach().cpu().numpy().transpose(1, 2, 0)
 
-def RGB2BGR():
-    pass
+
+def denormalization(x: Tensor) -> Tensor:
+    """
+    Regularize images
+    ------
+    Args:
+        x: the input image
+    Returns:
+        the Regularized image
+    """
+    return x*0.5+0.5
+
+
+def RGB2BGR(x: ndarray) -> ndarray:
+    return cv2.cvtColor(x, cv2.COLOR_RGB2BGR)
+
+
+def cam(x, size=256) -> ndarray:
+    """
+    generate heatmap accroding to the attention module
+    -------
+    Args:
+        x: the attention module's output
+        size: the image size
+    Returns:
+        the heatmap
+    """
+    # norm
+    x = x-np.min(x)
+    cam_img = x/np.max(x)
+    cam_img = np.uint8(255*cam_img)
+    cam_img = cv2.resize(cam_img, (size, size))
+    cam_img = cv2.applyColorMap(cam_img, cv2.COLORMAP_JET)
+    return cam_img/255.0
+
+
+def handle_generated_image(x: Tensor) -> ndarray:
+    return RGB2BGR(tensor2numpy(denormalization(x)))
+
+
+def handle_cam_heatmap(x: Tensor, size: int) -> ndarray:
+    return cam(tensor2numpy(x), size=size)
