@@ -4,3 +4,5 @@ datasets/
 .vscode/
 # python cache files
 __pycache__/
+# results
+results/

@@ -3,10 +3,10 @@
 # use the light model?
 light: True
 # the base number of featres in every layer
-ch: 64
+ch: 32
 
 # DATASET SETTINGS
-dataset: dataset_name
+dataset: selfie2anime
 batch_size: 1
 img_size: 256
 img_ch: 3

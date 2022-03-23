@@ -99,7 +99,7 @@ class ClassActivationMapping(nn.Module):
 
 class BetaAndGamma(nn.Module):
     """
-    Extracting learnable parameters beta and gamma from feature maps in the AdaLIN module
+    Extracting learnable parameters beta and gamma from feature maps in the CAM module
 
     Args:
         n_features: the number of features in the input feature map

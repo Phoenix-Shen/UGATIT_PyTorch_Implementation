@@ -1,4 +1,3 @@
-from matplotlib.pyplot import axis
 import torchvision.transforms as transforms
 import torch as t
 from utils import *
@@ -16,13 +15,15 @@ def train():
     # load config #
     ###############
     args = load_config("config.yaml")
-
+    writer = SummaryWriter(os.path.join(
+        args["result_dir"], args["dataset"], "logs"))
     #############################################
     # set benchmark flag to accelerate training #
     #############################################
-    device = t.device("cuda" if args["cuda"] else "cpu")
+    device = t.device("cuda" if args["cuda"]
+                      and t.cuda.is_available() else "cpu")
 
-    if t.backends.cudnn.enabled and args["benchmarg_flag"]:
+    if t.backends.cudnn.enabled and args["benchmark_flag"]:
         t.backends.cudnn.benchmark = True
 
     ################################
@@ -76,20 +77,20 @@ def train():
                        light=args["light"]).to(device)
 
     # Global Discriminator
-    disGA = Discriminator(input_ch=3,
-                          n_hiddens=args["ch"],
-                          n_layers=7).to(device)
-    disGB = Discriminator(input_ch=3,
-                          n_hiddens=args["ch"],
-                          n_layers=7).to(device)
+    disGA = add_spectral_norm(Discriminator(input_ch=3,
+                                            n_hiddens=args["ch"],
+                                            n_layers=7).to(device))
+    disGB = add_spectral_norm(Discriminator(input_ch=3,
+                                            n_hiddens=args["ch"],
+                                            n_layers=7).to(device))
 
     # Local Discriminator
-    disLA = Discriminator(input_ch=3,
-                          n_hiddens=args["ch"],
-                          n_layers=5).to(device)
-    disLB = Discriminator(input_ch=3,
-                          n_hiddens=args["ch"],
-                          n_layers=5).to(device)
+    disLA = add_spectral_norm(Discriminator(input_ch=3,
+                                            n_hiddens=args["ch"],
+                                            n_layers=5).to(device))
+    disLB = add_spectral_norm(Discriminator(input_ch=3,
+                                            n_hiddens=args["ch"],
+                                            n_layers=5).to(device))
 
     # Loss Function
     L1_loss = nn.L1Loss().to(device)
@@ -122,7 +123,8 @@ def train():
     start_iter = 1
     # load model if resume training flag is set
     if args["resume"]:
-        start_iter, model_path = find_latest_model()
+        start_iter, model_path = find_latest_model(
+            args["result_dir"], args["dataset"])
         # load the model
         if start_iter > 0:
             params = t.load(model_path)
@@ -174,6 +176,9 @@ def train():
         # Get the generated images A->B and B->A
         fake_A2B, _, _ = genA2B.forward(real_A)
         fake_B2A, _, _ = genB2A.forward(real_B)
+        # call detach() method to reduce memory consumption
+        fake_A2B = fake_A2B.detach()
+        fake_B2A = fake_A2B.detach()
         # Get the log probability of the real images
         real_GA_logit, real_GA_cam_logit, _ = disGA.forward(real_A)
         real_LA_logit, real_LA_cam_logit, _ = disLA.forward(real_A)
@@ -214,7 +219,17 @@ def train():
         Discriminator_loss = D_loss_A+D_loss_B
         Discriminator_loss.backward()
         optim_dis.step()
-
+        # send data to tensorboardX
+        writer.add_scalars("discriminator loss",
+                           {"adv_loss_GA": D_ad_loss_GA,
+                            "adv_cam_loss_GA": D_ad_cam_loss_GA,
+                            "adv_loss_GB": D_ad_loss_GB,
+                            "adv_cam_loss_GB": D_ad_cam_loss_GB,
+                            "adv_loss_LA": D_ad_loss_LA,
+                            "adv_cam_loss_LA": D_ad_cam_loss_LA,
+                            "adv_loss_LB": D_ad_loss_LB,
+                            "adv_cam_loss_LB": D_ad_cam_loss_LB, }, global_step=step
+                           )
         #####################
         # Update Generators #
         #####################
@@ -282,7 +297,17 @@ def train():
         Generator_loss = G_loss_A+G_loss_B
         Generator_loss.backward()
         optim_gen.step()
-
+        # send data to tensorboardX
+        writer.add_scalars("generator_loss",
+                           {"adv_loss_A": G_ad_loss_A*args["adv_weight"],
+                            "adv_loss_B": G_ad_loss_B*args["adv_weight"],
+                            "recon_loss_A": G_recon_loss_A*args["cycle_weight"],
+                            "recon_loss_B": G_recon_loss_B*args["cycle_weight"],
+                            "idt_loss_A": G_identity_loss_A*args["identity_weight"],
+                            "idt_loss_B": G_identity_loss_B*args["identity_weight"],
+                            "cam_loss_A": G_cam_loss_A*args["cam_weight"],
+                            "cam_loss_B": G_cam_loss_B*args["cam_weight"],
+                            }, global_step=step)
         ##################################################
         # Clip the parameter of the AdaILN and ILN layer #
         ##################################################
@@ -299,8 +324,8 @@ def train():
             if step % args["print_freq"] == 0:
                 train_sample_num = 5
                 test_sample_num = 5
-                A2B = np.zeros((args["image_size"]*7, 0, 3))
-                B2A = np.zeros((args["image_size"]*7, 0, 3))
+                A2B = np.zeros((args["img_size"]*7, 0, 3))
+                B2A = np.zeros((args["img_size"]*7, 0, 3))
                 # turn to eval mode
                 genA2B.eval(), genB2A.eval()
                 # generate train set images
@@ -318,38 +343,40 @@ def train():
 
                     real_A, real_B = real_A.to(device), real_B.to(device)
                     # A to B -> Style Transform
-                    fake_A2B, _, fake_A2B_heatmap = genA2B(real_A)
-                    fake_B2A, _, fake_B2A_heatmap = genB2A(real_B)
+                    fake_A2B, _, fake_A2B_heatmap = genA2B.forward(real_A)
+                    fake_B2A, _, fake_B2A_heatmap = genB2A.forward(real_B)
                     # A to B to A -> Reconstruction
-                    fake_A2B2A, _, fake_A2B2A_heatmap = genB2A(fake_A2B)
-                    fake_B2A2B, _, fake_B2A2B_heatmap = genA2B(fake_B2A)
+                    fake_A2B2A, _, fake_A2B2A_heatmap = genB2A.forward(
+                        fake_A2B)
+                    fake_B2A2B, _, fake_B2A2B_heatmap = genA2B.forward(
+                        fake_B2A)
                     # A to A -> Identity
-                    fake_A2A, _, fake_A2A_heatmap = genB2A(real_A)
-                    fake_B2B, _, fake_B2B_heatmap = genA2B(real_B)
+                    fake_A2A, _, fake_A2A_heatmap = genB2A.forward(real_A)
+                    fake_B2B, _, fake_B2B_heatmap = genA2B.forward(real_B)
                     # concatenate
-                    A2B = np.concatenate((A2B, np.concatenate(
+                    A2B = np.concatenate((A2B, np.concatenate((
                                          handle_generated_image(real_A[0]),
                                          handle_cam_heatmap(
                                              fake_A2A_heatmap[0], size=args["img_size"]),
                                          handle_generated_image(fake_A2A[0]),
                                          handle_cam_heatmap(
-                                             fake_A2B_heatmap, size=args["img_size"]),
+                                             fake_A2B_heatmap[0], size=args["img_size"]),
                                          handle_generated_image(fake_A2B[0]),
                                          handle_cam_heatmap(
                                              fake_A2B2A_heatmap[0], size=args["img_size"]),
-                                         handle_generated_image(fake_A2B2A[0]), axis=0)), axis=1)
+                                         handle_generated_image(fake_A2B2A[0])), axis=0)), axis=1)
 
-                    B2A = np.concatenate((B2A, np.concatenate(
+                    B2A = np.concatenate((B2A, np.concatenate((
                                          handle_generated_image(real_B[0]),
                                          handle_cam_heatmap(
                                              fake_B2B_heatmap[0], size=args["img_size"]),
                                          handle_generated_image(fake_B2B[0]),
                                          handle_cam_heatmap(
-                                             fake_B2A_heatmap, size=args["img_size"]),
+                                             fake_B2A_heatmap[0], size=args["img_size"]),
                                          handle_generated_image(fake_B2A[0]),
                                          handle_cam_heatmap(
                                              fake_B2A2B_heatmap[0], size=args["img_size"]),
-                                         handle_generated_image(fake_B2A2B[0]), axis=0)), axis=1)
+                                         handle_generated_image(fake_B2A2B[0])), axis=0)), axis=1)
 
                 for _ in range(test_sample_num):
                     try:
@@ -365,44 +392,46 @@ def train():
 
                     real_A, real_B = real_A.to(device), real_B.to(device)
                     # A to B -> Style Transform
-                    fake_A2B, _, fake_A2B_heatmap = genA2B(real_A)
-                    fake_B2A, _, fake_B2A_heatmap = genB2A(real_B)
+                    fake_A2B, _, fake_A2B_heatmap = genA2B.forward(real_A)
+                    fake_B2A, _, fake_B2A_heatmap = genB2A.forward(real_B)
                     # A to B to A -> Reconstruction
-                    fake_A2B2A, _, fake_A2B2A_heatmap = genB2A(fake_A2B)
-                    fake_B2A2B, _, fake_B2A2B_heatmap = genA2B(fake_B2A)
+                    fake_A2B2A, _, fake_A2B2A_heatmap = genB2A.forward(
+                        fake_A2B)
+                    fake_B2A2B, _, fake_B2A2B_heatmap = genA2B.forward(
+                        fake_B2A)
                     # A to A -> Identity
-                    fake_A2A, _, fake_A2A_heatmap = genB2A(real_A)
-                    fake_B2B, _, fake_B2B_heatmap = genA2B(real_B)
+                    fake_A2A, _, fake_A2A_heatmap = genB2A.forward(real_A)
+                    fake_B2B, _, fake_B2B_heatmap = genA2B.forward(real_B)
                     # concatenate
-                    A2B = np.concatenate((A2B, np.concatenate(
+                    A2B = np.concatenate((A2B, np.concatenate((
                                          handle_generated_image(real_A[0]),
                                          handle_cam_heatmap(
                                              fake_A2A_heatmap[0], size=args["img_size"]),
                                          handle_generated_image(fake_A2A[0]),
                                          handle_cam_heatmap(
-                                             fake_A2B_heatmap, size=args["img_size"]),
+                                             fake_A2B_heatmap[0], size=args["img_size"]),
                                          handle_generated_image(fake_A2B[0]),
                                          handle_cam_heatmap(
                                              fake_A2B2A_heatmap[0], size=args["img_size"]),
-                                         handle_generated_image(fake_A2B2A[0]), axis=0)), axis=1)
+                                         handle_generated_image(fake_A2B2A[0])), axis=0)), axis=1)
 
-                    B2A = np.concatenate((B2A, np.concatenate(
+                    B2A = np.concatenate((B2A, np.concatenate((
                                          handle_generated_image(real_B[0]),
                                          handle_cam_heatmap(
                                              fake_B2B_heatmap[0], size=args["img_size"]),
                                          handle_generated_image(fake_B2B[0]),
                                          handle_cam_heatmap(
-                                             fake_B2A_heatmap, size=args["img_size"]),
+                                             fake_B2A_heatmap[0], size=args["img_size"]),
                                          handle_generated_image(fake_B2A[0]),
                                          handle_cam_heatmap(
                                              fake_B2A2B_heatmap[0], size=args["img_size"]),
-                                         handle_generated_image(fake_B2A2B[0]), axis=0)), axis=1)
+                                         handle_generated_image(fake_B2A2B[0])), axis=0)), axis=1)
 
                 # write image
                 cv2.imwrite(os.path.join(
-                    args["result_dir"], args["dataset"], "img_A2B_%07d.png" % step), A2B*255.0)
+                    args["result_dir"], args["dataset"], "img", "A2B_%07d.png" % step), A2B*255.0)
                 cv2.imwrite(os.path.join(
-                    args["result_dir"], args["dataset"], "img_B2A_%07d.png" % step), B2A*255.0)
+                    args["result_dir"], args["dataset"], "img", "B2A_%07d.png" % step), B2A*255.0)
                 # turn to train mode
                 genA2B.train(), genB2A.train()
 
@@ -415,7 +444,7 @@ def train():
             params['disLA'] = disLA.state_dict()
             params['disLB'] = disLB.state_dict()
             t.save(params, os.path.join(args["result_dir"],
-                                        args["dataset"] + '_params_%07d.pt' % step))
+                                        args["dataset"] + "model", '_params_%07d.pt' % step))
 
 
 if __name__ == "__main__":

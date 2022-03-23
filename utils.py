@@ -1,8 +1,6 @@
 # %%
-
-from ctypes.wintypes import RGB
 from numpy import ndarray
-from torch import Tensor, tensor
+from torch import Tensor
 import yaml
 import os
 import torch.nn as nn
@@ -10,7 +8,8 @@ from glob import glob
 import torch as t
 import cv2
 import numpy as np
-
+from shutil import copyfile
+from model import Discriminator
 
 def load_config(config_file_path: str) -> dict:
     """
@@ -33,6 +32,7 @@ def load_config(config_file_path: str) -> dict:
 
     create_folder(args)
     check_config(args)
+    return args
 
 
 def create_folder(config: dict) -> None:
@@ -47,6 +47,8 @@ def create_folder(config: dict) -> None:
         os.makedirs(os.path.join(result_path, "img"))
         os.makedirs(os.path.join(result_path, "model"))
         os.makedirs(os.path.join(result_path, "test"))
+    copyfile("config.yaml", os.path.join(
+        config["result_dir"], config["dataset"], "config.yaml"))
 
 
 def check_config(config: dict) -> bool:
@@ -56,13 +58,11 @@ def check_config(config: dict) -> bool:
     """
     assert config["batch_size"] >= 1
     assert config["iteration"] >= 1
-    assert config["n_res"] >= 1
-    assert config["n_diss"] >= 1
     assert config["ch"] >= 1
     assert len(config["dataset"]) > 0
 
 
-def add_spectral_norm(m: nn.Module) -> nn.Module:
+def add_spectral_norm(m: Discriminator) -> Discriminator:
     """
     add Spectral Normalization to the Module
     ------
@@ -75,13 +75,12 @@ def add_spectral_norm(m: nn.Module) -> nn.Module:
 
         m.add_module(name, add_spectral_norm(layer))
     if isinstance(m, (nn.Linear, nn.Conv2d)):
-        print(f"add sn to {m}")
         return nn.utils.spectral_norm(m)
     else:
         return m
 
 
-def find_latest_model(result_path: str, dataset_name: str) -> tuple[str, int]:
+def find_latest_model(result_path: str, dataset_name: str) -> tuple[int, str]:
     """
     Find the latest model that meets the criteria
     -------
@@ -167,15 +166,23 @@ def cam(x, size=256) -> ndarray:
     # norm
     x = x-np.min(x)
     cam_img = x/np.max(x)
+    # to uint8
     cam_img = np.uint8(255*cam_img)
+    # resize
     cam_img = cv2.resize(cam_img, (size, size))
     cam_img = cv2.applyColorMap(cam_img, cv2.COLORMAP_JET)
     return cam_img/255.0
 
 
 def handle_generated_image(x: Tensor) -> ndarray:
+    """
+    Combines operations such as regularization and tensor to numpy
+    """
     return RGB2BGR(tensor2numpy(denormalization(x)))
 
 
 def handle_cam_heatmap(x: Tensor, size: int) -> ndarray:
+    """
+    Combined with cam, tensor to numpy and other operations
+    """
     return cam(tensor2numpy(x), size=size)
