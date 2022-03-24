@@ -1,5 +1,8 @@
 # %%
+from sys import setrecursionlimit
+from cv2 import FastFeatureDetector
 from numpy import ndarray
+from prometheus_client import instance_ip_grouping_key
 from torch import Tensor
 import yaml
 import os
@@ -193,8 +196,35 @@ def weight_init(m: nn.Module) -> None:
     """
     Initialize network parameters
     """
-    if isinstance(m, (nn.Conv2d)):
-        nn.init.kaiming_normal_(m.weight, mode="fan_in")
-
-    if isinstance(m, (nn.Linear)):
+    if isinstance(m, (nn.Conv2d, nn.Linear)):
         nn.init.xavier_normal_(m.weight, gain=nn.init.calculate_gain("relu"))
+
+
+def set_requires_grad(nets: list[nn.Module], requires_grad: bool) -> None:
+    """
+    disable or enable the grad computing of the networks, Set requies_grad=Fasle for all the networks to avoid unnecessary computations
+    ------
+    Args:
+        nets:list[nn.Module] the modules you want to do operation
+        requires_grad: bool, false to disable the grad and on to enable grad
+    """
+    if not isinstance(nets, list):
+        nets = [nets]
+    for net in nets:
+        if net is not None:
+            for param in net.parameters():
+                param.requires_grad = requires_grad
+
+
+def disable_grad(nets: list[nn.Module]) -> None:
+    """
+    call set_requires_grad(nets:list[nn.Module],requires_grad=False)
+    """
+    set_requires_grad(nets, False)
+
+
+def enable_grad(nets: list[nn.Module]) -> None:
+    """
+    call set_requires_grad(nets:list[nn.Module],requires_grad=True)
+    """
+    set_requires_grad(nets, True)
