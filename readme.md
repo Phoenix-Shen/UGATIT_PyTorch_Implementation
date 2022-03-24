@@ -1,5 +1,7 @@
 # U-GAT-IT 的重构版本
 
+要做毕设的嘛，这个版本的代码正在跑了。
+
 [原代码 Pytorch 版本](https://github.com/znxlwm/UGATIT-pytorch)
 
 [原代码 TensorFlow 版本](https://github.com/taki0112/UGATIT)
@@ -22,3 +24,17 @@
 1. 检查发现，提取 Normalize 层的参数 Beta，Gamma 的时候使用全连接层，这个全连接层输入是将特征图展平，即 256\*64\*64，输出是 256，导致单单这个层的参数就是**1GB**，模型大小为 1.05G，非常不合理。
 
 2. 他自己也提供了轻量化模型的选项，就是将特征图进行池化之后再丢进全连接层，这样显存就大大减少了。
+
+# 生成器和判别器的结构
+
+1. 生成器
+
+   ![](./fig/Gen.png)
+
+2. 判别器
+
+   ![](./fig/Dis.png)
+
+# 循环一致性约束
+
+![](./fig/CycleConsistency.png)

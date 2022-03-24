@@ -11,6 +11,7 @@ import numpy as np
 from shutil import copyfile
 from model import Discriminator
 
+
 def load_config(config_file_path: str) -> dict:
     """
     load config from a yaml file and returns a dictionary that contains the configuration and print them 
@@ -28,7 +29,7 @@ def load_config(config_file_path: str) -> dict:
 
     print("###################YOUR SETTINGS###################")
     for key in args.keys():
-        print(f"[{key}]".ljust(30, " "), f"--->{args[key]}")
+        print(f"[{key}]".ljust(20, " "), f"--->{args[key]}")
 
     create_folder(args)
     check_config(args)
@@ -186,3 +187,14 @@ def handle_cam_heatmap(x: Tensor, size: int) -> ndarray:
     Combined with cam, tensor to numpy and other operations
     """
     return cam(tensor2numpy(x), size=size)
+
+
+def weight_init(m: nn.Module) -> None:
+    """
+    Initialize network parameters
+    """
+    if isinstance(m, (nn.Conv2d)):
+        nn.init.kaiming_normal_(m.weight, mode="fan_in")
+
+    if isinstance(m, (nn.Linear)):
+        nn.init.xavier_normal_(m.weight, gain=nn.init.calculate_gain("relu"))

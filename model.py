@@ -10,6 +10,8 @@ import torch.nn as nn
 import torch.nn.functional as F
 from torch import Tensor
 
+from utils import weight_init
+
 
 class ResnetBlock(nn.Module):
     """
@@ -342,6 +344,7 @@ class Generator(nn.Module):
                      ]
 
         self.UpBlock2 = nn.Sequential(*UpBlock2)
+        self.apply(weight_init)
 
     def forward(self, x: Tensor) -> tuple[Tensor, Tensor, Tensor]:
         """
@@ -408,6 +411,8 @@ class Discriminator(nn.Module):
         self.pad = nn.ReflectionPad2d(1)
         self.conv = nn.Conv2d(n_hiddens*mult, 1, kernel_size=4,
                               stride=1, padding=0, bias=False)
+
+        self.apply(weight_init)
 
     def forward(self, x: Tensor) -> tuple[Tensor, Tensor, Tensor]:
         """
