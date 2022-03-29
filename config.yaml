@@ -6,7 +6,7 @@ light: True
 ch: 32
 
 # DATASET SETTINGS
-dataset: selfie2anime
+dataset: monet2photo
 batch_size: 1
 img_size: 256
 img_ch: 3
@@ -29,8 +29,8 @@ identity_weight: 10
 cam_weight: 1000
 # cuda and computing acceleration
 cuda: True
-benchmark_flag: False
+benchmark_flag: True
 # result dir
 result_dir: results
 # resume Training?
-resume: False
+resume: True

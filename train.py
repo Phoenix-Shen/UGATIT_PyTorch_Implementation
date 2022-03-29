@@ -1,4 +1,4 @@
-from faulthandler import disable
+
 import torchvision.transforms as transforms
 import torch as t
 from utils import *
@@ -174,14 +174,14 @@ def train():
         # Update Discriminators #
         #########################
         # IMPORTANT:: disable grad computing in Generators
-        disable_grad([genA2B,genB2A])
+        disable_grad([genA2B, genB2A])
         optim_dis.zero_grad()
         # Get the generated images A->B and B->A
         fake_A2B, _, _ = genA2B.forward(real_A)
         fake_B2A, _, _ = genB2A.forward(real_B)
         # Detach
-        fake_A2B=fake_A2B.detach()
-        fake_B2A=fake_B2A.detach()
+        fake_A2B = fake_A2B.detach()
+        fake_B2A = fake_B2A.detach()
         # Get the log probability of the real images
         real_GA_logit, real_GA_cam_logit, _ = disGA.forward(real_A)
         real_LA_logit, real_LA_cam_logit, _ = disLA.forward(real_A)
@@ -223,7 +223,7 @@ def train():
         Discriminator_loss.backward()
         optim_dis.step()
         # enable grad
-        enable_grad([genA2B,genB2A])
+        enable_grad([genA2B, genB2A])
         # send data to tensorboardX
         writer.add_scalars("discriminator loss",
                            {"adv_loss_GA": D_ad_loss_GA,
@@ -449,7 +449,7 @@ def train():
             params['disLA'] = disLA.state_dict()
             params['disLB'] = disLB.state_dict()
             t.save(params, os.path.join(args["result_dir"],
-                                        args["dataset"] + "model", '_params_%07d.pt' % step))
+                                        args["dataset"], "model", args["dataset"]+'_params_%07d.pt' % step))
 
 
 if __name__ == "__main__":

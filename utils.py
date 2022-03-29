@@ -1,8 +1,5 @@
 # %%
-from sys import setrecursionlimit
-from cv2 import FastFeatureDetector
 from numpy import ndarray
-from prometheus_client import instance_ip_grouping_key
 from torch import Tensor
 import yaml
 import os
@@ -92,7 +89,7 @@ def find_latest_model(result_path: str, dataset_name: str) -> tuple[int, str]:
         result_path: the path to store the results
         dataset_name: the name of the dataset
     Returns:
-        the iteration number of the model, -1 if not exists\n
+        the iteration number of the model, 1 if not exists\n
         the relative path of the latest model, None if not exists\n
     """
     model_list = glob(os.path.join(result_path, dataset_name, "model", "*.pt"))
@@ -103,7 +100,7 @@ def find_latest_model(result_path: str, dataset_name: str) -> tuple[int, str]:
 
         return start_iter, os.path.join(result_path, dataset_name, "model", model_list[-1])
     else:
-        return -1, None
+        return 1, None
 
 
 def save_model(genA2B: nn.Module, genB2A: nn.Module, disGA: nn.Module, disGB: nn.Module, disLA: nn.Module, disLB: nn.Module, dir: str, dataset: str, step: int) -> None:
@@ -190,14 +187,6 @@ def handle_cam_heatmap(x: Tensor, size: int) -> ndarray:
     Combined with cam, tensor to numpy and other operations
     """
     return cam(tensor2numpy(x), size=size)
-
-
-def weight_init(m: nn.Module) -> None:
-    """
-    Initialize network parameters
-    """
-    if isinstance(m, (nn.Conv2d, nn.Linear)):
-        nn.init.xavier_normal_(m.weight, gain=nn.init.calculate_gain("relu"))
 
 
 def set_requires_grad(nets: list[nn.Module], requires_grad: bool) -> None:
