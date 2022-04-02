@@ -133,8 +133,8 @@ def train():
             genB2A.load_state_dict(params["genB2A"])
             disGA.load_state_dict(params["disGA"])
             disGB.load_state_dict(params["disGB"])
-            disLA.load_state_dict(params["genA2B"])
-            disLB.load_state_dict(params["genA2B"])
+            disLA.load_state_dict(params["disLA"])
+            disLB.load_state_dict(params["disLB"])
             print(f"load {model_path} SUCCESS")
             # adjust the learning rate
             if args["decay_flag"] and start_iter > (args["iteration"]//2):
@@ -246,7 +246,7 @@ def train():
         # reconstruct to the original domain
         fake_A2B2A, _, _ = genB2A.forward(fake_A2B)
         fake_B2A2B, _, _ = genA2B.forward(fake_B2A)
-        # we should transfer the style from the same domain
+        # we should not transfer the style from the same domain
         fake_A2A, fake_A2A_cam_logit, _ = genB2A.forward(real_A)
         fake_B2B, fake_B2B_cam_logit, _ = genA2B.forward(real_B)
         # evaluate the generated images
@@ -312,6 +312,9 @@ def train():
                             "idt_loss_B": G_identity_loss_B*args["identity_weight"],
                             "cam_loss_A": G_cam_loss_A*args["cam_weight"],
                             "cam_loss_B": G_cam_loss_B*args["cam_weight"],
+                            "loss_G_A":G_loss_A,
+                            "loss_G_B":G_loss_B,
+                            "total_loss":Generator_loss,
                             }, global_step=step)
         ##################################################
         # Clip the parameter of the AdaILN and ILN layer #

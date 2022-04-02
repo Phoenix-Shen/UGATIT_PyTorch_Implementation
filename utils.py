@@ -96,9 +96,9 @@ def find_latest_model(result_path: str, dataset_name: str) -> tuple[int, str]:
 
     if not len(model_list) == 0:
         model_list.sort()
-        start_iter = int(model_list[-1].split("_")[-1].split("0")[0])
+        start_iter = int(model_list[-1].split("_")[-1].split(".")[0])
 
-        return start_iter, os.path.join(result_path, dataset_name, "model", model_list[-1])
+        return start_iter+1, os.path.join(model_list[-1])
     else:
         return 1, None
 

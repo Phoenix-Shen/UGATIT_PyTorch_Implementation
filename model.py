@@ -11,12 +11,12 @@ import torch.nn.functional as F
 from torch import Tensor
 
 
-def xavier_weight_init(m: nn.Module) -> None:
+def weight_init(m: nn.Module) -> None:
     """
     Initialize network parameters
     """
     if isinstance(m, (nn.Conv2d, nn.Linear)):
-        nn.init.xavier_normal_(m.weight, gain=nn.init.calculate_gain("relu"))
+        nn.init.normal_(m.weight, 0, 0.02)
 
 
 class ResnetBlock(nn.Module):
@@ -350,7 +350,7 @@ class Generator(nn.Module):
                      ]
 
         self.UpBlock2 = nn.Sequential(*UpBlock2)
-        self.apply(xavier_weight_init)
+        self.apply(weight_init)
 
     def forward(self, x: Tensor) -> tuple[Tensor, Tensor, Tensor]:
         """
@@ -418,7 +418,7 @@ class Discriminator(nn.Module):
         self.conv = nn.Conv2d(n_hiddens*mult, 1, kernel_size=4,
                               stride=1, padding=0, bias=False)
 
-        self.apply(xavier_weight_init)
+        self.apply(weight_init)
 
     def forward(self, x: Tensor) -> tuple[Tensor, Tensor, Tensor]:
         """

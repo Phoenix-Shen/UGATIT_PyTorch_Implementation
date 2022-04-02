@@ -14,9 +14,9 @@ img_ch: 3
 # TRAINING SETTINGS
 iteration: 1000000
 # the frequency of saving the generated images
-print_freq: 1000
+print_freq: 2000
 # the frequency of saving the parameters
-save_freq: 10000
+save_freq: 20000
 
 decay_flag: True
 # learning rate and weight decay
