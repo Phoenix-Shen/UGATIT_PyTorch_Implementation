@@ -312,9 +312,9 @@ def train():
                             "idt_loss_B": G_identity_loss_B*args["identity_weight"],
                             "cam_loss_A": G_cam_loss_A*args["cam_weight"],
                             "cam_loss_B": G_cam_loss_B*args["cam_weight"],
-                            "loss_G_A":G_loss_A,
-                            "loss_G_B":G_loss_B,
-                            "total_loss":Generator_loss,
+                            "loss_G_A": G_loss_A,
+                            "loss_G_B": G_loss_B,
+                            "total_loss": Generator_loss,
                             }, global_step=step)
         ##################################################
         # Clip the parameter of the AdaILN and ILN layer #

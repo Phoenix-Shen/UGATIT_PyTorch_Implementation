@@ -300,7 +300,7 @@ class Generator(nn.Module):
         for i in range(n_downsampling):
             mult = 2**i
             DownBlock += [
-                nn.ReplicationPad2d(1),
+                nn.ReflectionPad2d(1),
                 nn.Conv2d(n_hiddens*mult, n_hiddens*mult*2,
                           kernel_size=3, stride=2, padding=0, bias=False),
                 nn.InstanceNorm2d(n_hiddens*mult*2),
