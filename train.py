@@ -127,7 +127,7 @@ def train():
         start_iter, model_path = find_latest_model(
             args["result_dir"], args["dataset"])
         # load the model
-        if start_iter > 0:
+        if start_iter > 1:
             params = t.load(model_path)
             genA2B.load_state_dict(params["genA2B"])
             genB2A.load_state_dict(params["genB2A"])

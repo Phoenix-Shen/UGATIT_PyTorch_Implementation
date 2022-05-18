@@ -12,7 +12,7 @@
 2. 将参数写在 config.yml 中，每次训练/测试都会读取这个文件，就不用配置 lunch.json 或者输入一大堆--batch_size 这种命令
 3. 将损失传到 tensorboard 中，可以查看
 4. 在验证阶段和训练的某些代码段中禁用梯度计算，减小显存的使用
-5. 添加原文中的 **zero-centered normal distribution with a standard deviation of 0.02.**参数初始化
+5. 添加原文中的 **zero-centered normal distribution with a standard deviation of 0.02**参数初始化
 
 # 生成器和判别器的结构
 
